@@ -131,5 +131,6 @@ private:
 };
 
 extern CServerInfo* g_ServerInfo;
+extern CServerInfo* g_ServerAltInfo;
 
 extern bool Reunion_Init_ServerInfo();

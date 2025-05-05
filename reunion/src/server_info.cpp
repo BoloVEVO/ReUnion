@@ -1,12 +1,15 @@
 #include "precompiled.h"
 
 CServerInfo* g_ServerInfo;
+CServerInfo* g_ServerAltInfo;
 
 const char* CServerInfo::DETAILS			= "details";
 const char* CServerInfo::PLAYERS			= "players";
 const char* CServerInfo::CONNECT			= "connect";
 const char* CServerInfo::CHALLENGE			= "challenge";
 const char* CServerInfo::GETCHALLENGE		= "getchallenge";
+
+bool isAlt = false;
 
 CServerInfo::CServerInfo()
 {
@@ -37,6 +40,11 @@ CServerInfo::CServerInfo()
 
 	m_queryLimiter.addExceptIPs(g_ReunionConfig->getExceptIPs());
 	m_lastRatesCheck = g_RehldsFuncs->GetRealTime();
+
+	if (isAlt)
+		memcpy(m_gameDir, "czero", sizeof(m_gameDir));
+	else
+		g_engfuncs.pfnGetGameDir(m_gameDir);
 }
 
 void CServerInfo::writeSourceResponse(CSizeBuf& szbuf) const
@@ -238,10 +246,14 @@ void CServerInfo::sendServerInfo(const netadr_t& to, server_answer_type sat)
 		break;
 
 	case sat_hybrid:
+
 		sendResponse(to, m_respGoldSrc);
+
 		if (g_ReunionConfig->allowFixBuggedQuery() && m_queryBugfix.isBuggedQuery(to)) {
 			sendEmptyPlayersList(to);
 		}
+
+
 		sendResponse(to, m_respSource);
 		break;
 
@@ -333,6 +345,8 @@ bool CServerInfo::handleQueryGlobal(IRehldsHook_PreprocessPacket* chain, CSizeBu
 
 	return chain->callNext(szbuf.GetData(), szbuf.GetCurSize(), from);
 }
+
+bool czeroQuery = false;
 
 bool CServerInfo::handleQuery(IRehldsHook_PreprocessPacket* chain, uint8* data, unsigned int len, const netadr_t& from)
 {
@@ -432,6 +446,7 @@ bool CServerInfo::handleQuery(IRehldsHook_PreprocessPacket* chain, uint8* data, 
 			server_answer_type sat = g_ReunionConfig->getServerAnswerType();
 
 			if (sat != sat_source && m_queryLimiter.allowQuery(from) && !m_queryLimiter.isUnderFlood()) {
+
 				sendServerInfo(from, sat_goldsource);
 			}
 
@@ -538,7 +553,10 @@ void CServerInfo::serverActivate(edict_t* edicts, int maxclients)
 	m_pcv_sv_password = g_engfuncs.pfnCVarGetPointer("sv_password");
 	m_pcv_net_address = g_engfuncs.pfnCVarGetPointer("net_address");
 
-	m_appId = parseAppId();
+	if (isAlt)
+		m_appId = 80;
+	else
+		m_appId = parseAppId();
 	parseAppVersion(m_appVersion, sizeof m_appVersion - 1);
 	m_port = atoi(g_engfuncs.pfnCVarGetString("hostport"));
 
@@ -548,8 +566,6 @@ void CServerInfo::serverActivate(edict_t* edicts, int maxclients)
 			m_port = PORT_SERVER;
 		}
 	}
-
-	g_engfuncs.pfnGetGameDir(m_gameDir);
 }
 
 const char* CServerInfo::getHostName() const
@@ -720,12 +736,17 @@ bool Reunion_PreprocessPacket(IRehldsHook_PreprocessPacket* chain, uint8* data, 
 	if (g_ServerInfo->isAddressBanned(from))
 		return false;
 
-	return g_ServerInfo->handleQuery(chain, data, len, from);
+	g_ServerInfo->handleQuery(chain, data, len, from);
+	g_ServerAltInfo->handleQuery(chain, data, len, from);
+
+	return true;
 }
 
 bool Reunion_Init_ServerInfo()
 {
 	g_ServerInfo = new CServerInfo();
+	isAlt = true;
+	g_ServerAltInfo = new CServerInfo();
 	g_RehldsHookchains->PreprocessPacket()->registerHook(&Reunion_PreprocessPacket);
 	return true;
 }

@@ -34,6 +34,7 @@
 void ServerActivate(edict_t *pEdictList, int edictCount, int clientMax)
 {
 	g_ServerInfo->serverActivate(pEdictList, clientMax);
+	g_ServerAltInfo->serverActivate(pEdictList, clientMax);
 	RETURN_META(MRES_IGNORED);
 }
 
