@@ -9,7 +9,14 @@ const char* CServerInfo::CONNECT			= "connect";
 const char* CServerInfo::CHALLENGE			= "challenge";
 const char* CServerInfo::GETCHALLENGE		= "getchallenge";
 
-bool isAlt = false;
+int g_appid = 0;
+int g_alt_appid = 0;
+char g_gamedir[256];
+char g_altgamedir[256];
+int g_port = 27015;
+
+size_t curPlayers = 0;
+size_t curBots = 0;
 
 CServerInfo::CServerInfo()
 {
@@ -21,6 +28,7 @@ CServerInfo::CServerInfo()
 	m_pcv_sv_password = nullptr;
 	m_pcv_net_address = nullptr;
 	m_pEntityInterface = nullptr;
+	m_game = 0;
 	m_realTime = 0.0;
 	m_port = 0;
 	m_appId = 0;
@@ -41,10 +49,8 @@ CServerInfo::CServerInfo()
 	m_queryLimiter.addExceptIPs(g_ReunionConfig->getExceptIPs());
 	m_lastRatesCheck = g_RehldsFuncs->GetRealTime();
 
-	if (isAlt)
-		memcpy(m_gameDir, "czero", sizeof(m_gameDir));
-	else
-		g_engfuncs.pfnGetGameDir(m_gameDir);
+	g_engfuncs.pfnGetGameDir(g_gamedir);
+	memcpy(g_altgamedir, "czero", sizeof(g_altgamedir));
 }
 
 void CServerInfo::writeSourceResponse(CSizeBuf& szbuf) const
@@ -62,9 +68,9 @@ void CServerInfo::writeSourceResponse(CSizeBuf& szbuf) const
 		szbuf.WriteString(getGameDescription());		// gamename
 	}
 	szbuf.WriteShort(getAppId());						// appid
-	szbuf.WriteByte((uint8)getPlayersCount());			// players
+	szbuf.WriteByte((uint8)curPlayers);			// players
 	szbuf.WriteByte((uint8)getVisibleMaxPlayers());		// maxplayers
-	szbuf.WriteByte((uint8)getPlayingBots());			// bots
+	szbuf.WriteByte((uint8)curBots);			// bots
 	szbuf.WriteByte('d');								// server type
 	szbuf.WriteByte(getOS());							// server os
 	szbuf.WriteByte(getIsPasswordSet());				// password
@@ -113,7 +119,7 @@ void CServerInfo::writeGoldSourceResponse(CSizeBuf& szbuf) const
 	szbuf.WriteString(getMapName());				// mapname
 	szbuf.WriteString(getGameDir());				// gamedir
 	szbuf.WriteString(getGameDescription());		// gamename
-	szbuf.WriteByte((uint8)getPlayersCount());		// players
+	szbuf.WriteByte((uint8)curPlayers);		// players
 	szbuf.WriteByte((uint8)getVisibleMaxPlayers());	// maxplayers
 	szbuf.WriteByte(47);							// protocol
 	szbuf.WriteByte('d');							// server type
@@ -121,7 +127,7 @@ void CServerInfo::writeGoldSourceResponse(CSizeBuf& szbuf) const
 	szbuf.WriteByte(getIsPasswordSet());			// password
 	szbuf.WriteByte(FALSE);							// mod info
 	szbuf.WriteByte(getSecure());					// secure
-	szbuf.WriteByte((uint8)getPlayingBots());		// bots
+	szbuf.WriteByte((uint8)curBots);		// bots
 }
 
 void CServerInfo::writePlayersList(CSizeBuf& szbuf) const
@@ -140,7 +146,8 @@ void CServerInfo::writePlayersList(CSizeBuf& szbuf) const
 		if (!player->getClient()->IsConnected())
 			continue;
 
-		szbuf.WriteByte((uint8)(count + (int)player->getClient()->IsFakeClient() * 128));	// index of player chunk starting from 0
+		szbuf.WriteByte((uint8)(count));	// index of player chunk starting from 0
+
 		szbuf.WriteString(player->getClient()->GetName());									// name
 		szbuf.WriteLong(int(m_pEdicts[i + 1].v.frags));										// frags
 		szbuf.WriteFloat(m_realTime - player->getConnectionTime());							// playing time
@@ -195,7 +202,7 @@ void CServerInfo::sendResponse(const netadr_t& adr, response_t& response)
 	}
 
 	if (response.cache.GetCurSize() <= STEAM_MAX_PACKET_SIZE || !g_ReunionConfig->isAllowSplitPackets())
-		return g_RehldsFuncs->NET_SendPacket(response.cache.GetCurSize(), response.cache.GetData(), adr);
+		return g_RehldsFuncs->NET_SendPacketEX((netsrc_t)(NS_EXTRA + m_game), response.cache.GetCurSize(), response.cache.GetData(), adr);
 
 	uint8_t buf[STEAM_MAX_PACKET_SIZE];
 	size_t fragSize = STEAM_MAX_PACKET_SIZE - sizeof(long) - sizeof(long) - sizeof(byte);
@@ -213,7 +220,7 @@ void CServerInfo::sendResponse(const netadr_t& adr, response_t& response)
 		sendbuf.WriteByte(packetID);					// fragment number
 		sendbuf.Write(response.cache.GetData() + offset, fragSize);
 
-		g_RehldsFuncs->NET_SendPacket(sendbuf.GetCurSize(), sendbuf.GetData(), adr);
+		g_RehldsFuncs->NET_SendPacketEX((netsrc_t)(NS_EXTRA + m_game),sendbuf.GetCurSize(), sendbuf.GetData(), adr);
 
 		offset += fragSize;
 	}
@@ -230,11 +237,12 @@ void CServerInfo::sendQueryChallenge(const netadr_t& to)
 	szbuf.WriteChar(S2C_CHALLENGE);
 	szbuf.WriteLong(g_RehldsFuncs->SV_GetChallenge(to));
 
-	g_RehldsFuncs->NET_SendPacket(szbuf.GetCurSize(), szbuf.GetData(), to);
+	g_RehldsFuncs->NET_SendPacketEX((netsrc_t)(NS_EXTRA + m_game),szbuf.GetCurSize(), szbuf.GetData(), to);
 }
 
 void CServerInfo::sendServerInfo(const netadr_t& to, server_answer_type sat)
 {
+
 	switch (sat)
 	{
 	case sat_source:
@@ -277,7 +285,7 @@ void CServerInfo::sendEmptyPlayersList(const netadr_t& to)
 	szbuf.WriteByte(S2A_PLAYERS);				// data header
 	szbuf.WriteByte(0);							// some clients crashing if not 0
 
-	g_RehldsFuncs->NET_SendPacket(szbuf.GetCurSize(), szbuf.GetData(), to);
+	g_RehldsFuncs->NET_SendPacketEX((netsrc_t)(NS_EXTRA + m_game),szbuf.GetCurSize(), szbuf.GetData(), to);
 }
 
 void CServerInfo::sendRulesList(const netadr_t& to)
@@ -287,7 +295,7 @@ void CServerInfo::sendRulesList(const netadr_t& to)
 
 #define equal(x, s) !memcmp(x, s, sizeof s - 1)
 
-bool CServerInfo::handleQueryGlobal(IRehldsHook_PreprocessPacket* chain, CSizeBuf& szbuf, const netadr_t& from)
+bool CServerInfo::handleQueryGlobal(IRehldsHook_PreprocessPacketEX* chain, CSizeBuf& szbuf, const netadr_t& from, unsigned int game)
 {
 	switch (szbuf.ReadChar())
 	{
@@ -298,7 +306,7 @@ bool CServerInfo::handleQueryGlobal(IRehldsHook_PreprocessPacket* chain, CSizeBu
 			if (szbuf.GetMaxSize() < A2S_INFO_LEN || szbuf.GetData()[5] != 'S') // "Source Engine Query"
 				return false;
 
-			g_RehldsFuncs->NET_SendPacket(m_respSource.cache.GetCurSize(), m_respSource.cache.GetData(), from);
+			g_RehldsFuncs->NET_SendPacketEX((netsrc_t)(NS_EXTRA + m_game),m_respSource.cache.GetCurSize(), m_respSource.cache.GetData(), from);
 			return false;
 		}
 
@@ -343,12 +351,10 @@ bool CServerInfo::handleQueryGlobal(IRehldsHook_PreprocessPacket* chain, CSizeBu
 			return false;
 	}
 
-	return chain->callNext(szbuf.GetData(), szbuf.GetCurSize(), from);
+	return chain->callNext(szbuf.GetData(), szbuf.GetCurSize(), from, game);
 }
 
-bool czeroQuery = false;
-
-bool CServerInfo::handleQuery(IRehldsHook_PreprocessPacket* chain, uint8* data, unsigned int len, const netadr_t& from)
+bool CServerInfo::handleQuery(IRehldsHook_PreprocessPacketEX* chain, uint8* data, unsigned int len, const netadr_t& from, unsigned int game)
 {
 	m_queryLimiter.incomingPacket(len + PACKET_HEADER_SIZE);
 
@@ -360,13 +366,13 @@ bool CServerInfo::handleQuery(IRehldsHook_PreprocessPacket* chain, uint8* data, 
 
 	// Not connectionless
 	if (szbuf.ReadLong() != -1) {
-		return chain->callNext(data, len, from);
+		return chain->callNext(data, len, from, game);
 	}
 
 	if (g_ReunionConfig->enableQueryLimiter()) {
 		m_queryLimiter.incomingQuery();
 		if (m_queryLimiter.getUseGlobalRateLimit()) {
-			return m_queryLimiter.allowGlobalQuery() ? handleQueryGlobal(chain, szbuf, from) : false;
+			return m_queryLimiter.allowGlobalQuery() ? handleQueryGlobal(chain, szbuf, from, game) : false;
 		}
 	}
 
@@ -383,6 +389,7 @@ bool CServerInfo::handleQuery(IRehldsHook_PreprocessPacket* chain, uint8* data, 
 
 			if (m_queryLimiter.allowQuery(from)) {
 				server_answer_type sat = g_ReunionConfig->getServerAnswerType();
+
 
 				if (sat == sat_hybrid && m_queryLimiter.isUnderFlood()) {
 					sat = sat_source;
@@ -495,7 +502,7 @@ bool CServerInfo::handleQuery(IRehldsHook_PreprocessPacket* chain, uint8* data, 
 	}
 
 	// query not handled
-	return chain->callNext(data, len, from);
+	return chain->callNext(data, len, from, game);
 }
 
 bool CServerInfo::isAddressBanned(const netadr_t& from) const
@@ -540,7 +547,7 @@ edict_t* CServerInfo::getEdict(size_t index) const
 	return m_pEdicts + index;
 }
 
-void CServerInfo::serverActivate(edict_t* edicts, int maxclients)
+void CServerInfo::serverActivate(edict_t* edicts, int maxclients, bool isAlt)
 {
 	m_pEdicts = edicts;
 	m_maxPlayers = maxclients;
@@ -553,19 +560,20 @@ void CServerInfo::serverActivate(edict_t* edicts, int maxclients)
 	m_pcv_sv_password = g_engfuncs.pfnCVarGetPointer("sv_password");
 	m_pcv_net_address = g_engfuncs.pfnCVarGetPointer("net_address");
 
-	if (isAlt)
-		m_appId = 80;
-	else
-		m_appId = parseAppId();
-	parseAppVersion(m_appVersion, sizeof m_appVersion - 1);
-	m_port = atoi(g_engfuncs.pfnCVarGetString("hostport"));
+	g_appid = parseAppId();
+	g_alt_appid = 80;
 
-	if (!m_port) {
-		m_port = atoi(g_engfuncs.pfnCVarGetString("port"));
-		if (!m_port) {
-			m_port = PORT_SERVER;
+	parseAppVersion(m_appVersion, sizeof m_appVersion - 1);
+	g_port = atoi(g_engfuncs.pfnCVarGetString("hostport"));
+
+	if (!g_port) {
+		g_port = atoi(g_engfuncs.pfnCVarGetString("port"));
+		if (!g_port) {
+			g_port = PORT_SERVER;
 		}
 	}
+
+	changeGameID(isAlt);
 }
 
 const char* CServerInfo::getHostName() const
@@ -596,29 +604,6 @@ const char* CServerInfo::getGameDescription() const
 	}
 
 	return MDLL_GetGameDescription();
-}
-
-size_t CServerInfo::getPlayersCount()
-{
-	return Reunion_GetConnectedPlayersCount();
-}
-
-size_t CServerInfo::getPlayingBots() const
-{
-	size_t count = 0;
-
-	for (int i = 1; i <= m_maxPlayers; i++)
-	{
-		if (!(m_pEdicts[i].v.flags & FL_FAKECLIENT))
-			continue;
-
-		if (m_pEdicts[i].v.flags & (FL_SPECTATOR | FL_DORMANT))
-			continue;
-
-		count++;
-	}
-
-	return count;
 }
 
 int CServerInfo::getMaxPlayers() const
@@ -731,22 +716,78 @@ void CServerInfo::parseAppVersion(char* buf, size_t maxlen)
 	}
 }
 
-bool Reunion_PreprocessPacket(IRehldsHook_PreprocessPacket* chain, uint8* data, unsigned int len, const netadr_t& from)
+void CServerInfo::changeGameID(bool isAlt)
 {
-	if (g_ServerInfo->isAddressBanned(from))
-		return false;
-
-	g_ServerInfo->handleQuery(chain, data, len, from);
-	g_ServerAltInfo->handleQuery(chain, data, len, from);
-
-	return true;
+	if (isAlt){
+		memcpy(m_gameDir, g_altgamedir, sizeof(m_gameDir));
+		m_appId = g_alt_appid;
+		m_port = g_port + 1;
+		m_game = 1;
+	}
+	else{
+		memcpy(m_gameDir, g_gamedir, sizeof(m_gameDir));
+		m_appId = g_appid;
+		m_port = g_port;
+		m_game = 0;
+	}
 }
+
+
+size_t CServerInfo::getPlayersCount()
+{
+	return Reunion_GetConnectedPlayersCount();
+}
+
+size_t CServerInfo::getPlayingBots() const
+{
+	size_t count = 0;
+
+	for (int i = 0; i < g_ServerInfo->m_maxPlayers; i++)
+	{
+		const CReunionPlayer* player = g_Players[i];
+
+		if (!(player->getClient()->IsConnected()))
+			continue;
+
+		if (!(g_ServerInfo->m_pEdicts[i+1].v.flags & (FL_CLIENT & ~FL_FAKECLIENT)))
+			continue;
+
+		if (g_ServerInfo->m_pEdicts[i+1].v.flags & (FL_SPECTATOR | FL_DORMANT))
+			continue;
+
+		if (!(player->getClient()->IsFakeClient()))
+			continue;
+
+		count++;	
+	}
+
+	return count;
+}
+
+bool Reunion_PreprocessPacketEX(IRehldsHook_PreprocessPacketEX* chain, uint8* data, unsigned int len, const netadr_t& from, unsigned int game)
+{
+	curPlayers = g_ServerInfo->getPlayersCount();
+	curBots = g_ServerInfo->getPlayingBots();
+
+	if (!game)
+	{
+		if (!g_ServerInfo->isAddressBanned(from))
+			return g_ServerInfo->handleQuery(chain, data, len, from, game);
+	}
+	else
+	{
+		if (!g_ServerAltInfo->isAddressBanned(from))
+			return g_ServerAltInfo->handleQuery(chain, data, len, from, game);
+	}
+
+	return false;
+}
+
 
 bool Reunion_Init_ServerInfo()
 {
 	g_ServerInfo = new CServerInfo();
-	isAlt = true;
 	g_ServerAltInfo = new CServerInfo();
-	g_RehldsHookchains->PreprocessPacket()->registerHook(&Reunion_PreprocessPacket);
+	g_RehldsHookchains->PreprocessPacketEX()->registerHook(&Reunion_PreprocessPacketEX);
 	return true;
 }

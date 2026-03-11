@@ -41,8 +41,8 @@ class CServerInfo
 public:
 	CServerInfo();
 
-	bool handleQuery(IRehldsHook_PreprocessPacket* chain, uint8* data, unsigned int len, const netadr_t& from);
-	bool handleQueryGlobal(IRehldsHook_PreprocessPacket* chain, CSizeBuf& szbuf, const netadr_t& from);
+	bool handleQuery(IRehldsHook_PreprocessPacketEX* chain, uint8* data, unsigned int len, const netadr_t& from, unsigned int game);
+	bool handleQueryGlobal(IRehldsHook_PreprocessPacketEX* chain, CSizeBuf& szbuf, const netadr_t& from, unsigned int game);
 
 	// QUERY PROCEDURES
 	void writeSourceResponse(CSizeBuf& szbuf) const;
@@ -50,7 +50,7 @@ public:
 	void writePlayersList(CSizeBuf& szbuf) const;
 	void writeRulesList(CSizeBuf& szbuf) const;
 
-	void serverActivate(edict_t* edicts, int maxclients);
+	void serverActivate(edict_t* edicts, int maxclients, bool isAlt);
 
 	double getRealTime() const;
 	int getMaxPlayers() const;
@@ -61,6 +61,12 @@ public:
 	void banAddress(const char* addr, uint32_t time);
 	void unbanAddress(const char* addr);
 	void printBans();
+	int getPort() const;
+	edict_t* m_pEdicts;
+	int m_maxPlayers;
+	void changeGameID(bool isAlt);
+	static size_t getPlayersCount();
+	size_t getPlayingBots() const;
 
 protected:
 	void sendQueryChallenge(const netadr_t& to);
@@ -76,14 +82,12 @@ private:
 	static const char* getMapName();
 	const char* getGameDir() const;
 	const char* getGameDescription() const;
-	static size_t getPlayersCount();
-	size_t getPlayingBots() const;
+
 	int getVisibleMaxPlayers() const;
 	static char getOS();
 	uint8 getIsPasswordSet() const;
 	static uint8 getSecure();
 	const char* getServerAddress() const;
-	int getPort() const;
 	int getAppId() const;
 	const char* getAppVersion() const;
 	int parseAppId();
@@ -101,8 +105,6 @@ private:
 	query_response_t<STEAM_MAX_PACKET_SIZE>		m_respPlayers;
 	query_response_t<STEAM_MAX_PACKET_SIZE * 2>	m_respRules;
 
-	int m_maxPlayers;
-	edict_t *m_pEdicts;
 	cvar_t *m_pcv_hostname;
 	cvar_t *m_pcv_sv_tags;
 	cvar_t *m_pcv_sv_visiblemaxplayers;
@@ -114,6 +116,8 @@ private:
 	int m_appId;
 	char m_appVersion[32];
 	char m_gameDir[MAX_PATH];
+	int m_game;
+	
 	size_t m_multipacketId;
 
 	enum

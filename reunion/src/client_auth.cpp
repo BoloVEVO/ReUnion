@@ -516,11 +516,13 @@ uint64 Steam_GSGetSteamID_hook(IRehldsHook_Steam_GSGetSteamID* chain)
 	return Steam_GSGetSteamID();
 }
 
-void SV_Frame_hook(IRehldsHook_SV_Frame* chain) {
+void SV_Frame_hook(IRehldsHook_SV_Frame* chain)
+{
 	chain->callNext();
 	g_ServerInfo->startFrame();
 	g_ServerAltInfo->startFrame();
 }
+
 
 bool Reunion_Auth_Init() {
 
@@ -576,4 +578,5 @@ bool Reunion_Auth_Init() {
 	g_RehldsHookchains->SV_Frame()->registerHook(&SV_Frame_hook);
 
 	return true;
+	
 }
