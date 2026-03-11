@@ -48,14 +48,23 @@ static uint32_t revHash(const char* str, int n = -1)
 	return hash;
 }
 
-// deprecated auth version reunion2015 has a truncated ticket buffer
 size_t Reunion_AuthKeyMaxLen(authdata_t* authdata)
 {
-	const uint32_t MAX_RAWAUTHDATA_TRUNCATED = 16;
-	uint32_t authKeyMaxLen = (g_ReunionConfig->getAuthVersion() == av_reunion2015)
-		? min(authdata->authKeyLen, MAX_RAWAUTHDATA_TRUNCATED) : authdata->authKeyLen;
+	// deprecated auth version reunion2015/reunion2018 has a truncated ticket buffer
+	const uint32_t MAX_RAWAUTHDATA_2015_TRUNCATED = 16;
+	const uint32_t MAX_RAWAUTHDATA_2018_TRUNCATED = 31;
 
-	return authKeyMaxLen;
+	switch (g_ReunionConfig->getAuthVersion())
+	{
+	case av_reunion2015:
+		return min(authdata->authKeyLen, MAX_RAWAUTHDATA_2015_TRUNCATED);
+	case av_reunion2018:
+		return min(authdata->authKeyLen, MAX_RAWAUTHDATA_2018_TRUNCATED);
+	default:
+		break;
+	}
+
+	return authdata->authKeyLen;
 }
 
 void RevEmuFinishAuthorization(authdata_t* authdata, const char* authStr, size_t authKeyMaxLen, bool stripSpecialChars)
@@ -99,7 +108,7 @@ void RevEmuFinishAuthorization(authdata_t* authdata, const char* authStr, size_t
 		authdata->steamId = revHash(authdata->authKey) << 1;
 
 		if (authStr == (char *)&volumeId)
-			LCPrintf(false, "RevEmu auth key: '%u' steamid: %u\n", (uint32_t)authStr, authdata->steamId);
+			LCPrintf(false, "RevEmu auth key: '%u' steamid: %u\n", volumeId, authdata->steamId);
 		else
 			LCPrintf(false, "RevEmu auth key: '%s' steamid: %u\n", authStr, authdata->steamId);
 	}
