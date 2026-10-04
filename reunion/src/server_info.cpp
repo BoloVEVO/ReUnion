@@ -1,13 +1,13 @@
 #include "precompiled.h"
 
-CServerInfo* g_ServerInfo;
-CServerInfo* g_ServerAltInfo;
+CServerInfo *g_ServerInfo;
+CServerInfo *g_ServerAltInfo;
 
-const char* CServerInfo::DETAILS			= "details";
-const char* CServerInfo::PLAYERS			= "players";
-const char* CServerInfo::CONNECT			= "connect";
-const char* CServerInfo::CHALLENGE			= "challenge";
-const char* CServerInfo::GETCHALLENGE		= "getchallenge";
+const char *CServerInfo::DETAILS = "details";
+const char *CServerInfo::PLAYERS = "players";
+const char *CServerInfo::CONNECT = "connect";
+const char *CServerInfo::CHALLENGE = "challenge";
+const char *CServerInfo::GETCHALLENGE = "getchallenge";
 
 int g_appid = 0;
 int g_alt_appid = 0;
@@ -37,14 +37,16 @@ CServerInfo::CServerInfo()
 	m_multipacketId = rand() | (rand() << 16);
 
 	// Query emulator
-	m_respSource.updateInterval		= QUERY_UPDATE_INTERVAL;
-	m_respSource.write				= &CServerInfo::writeSourceResponse;
-	m_respGoldSrc.updateInterval	= QUERY_UPDATE_INTERVAL;
-	m_respGoldSrc.write				= &CServerInfo::writeGoldSourceResponse;
-	m_respPlayers.updateInterval	= PLAYERS_UPDATE_INTERVAL;
-	m_respPlayers.write				= &CServerInfo::writePlayersList;
-	m_respRules.updateInterval		= RULES_UPDATE_INTERVAL;
-	m_respRules.write				= &CServerInfo::writeRulesList;
+	m_respSource.updateInterval = QUERY_UPDATE_INTERVAL;
+	m_respSource.write = &CServerInfo::writeSourceResponse;
+	m_respGoldSrc.updateInterval = QUERY_UPDATE_INTERVAL;
+	m_respGoldSrc.write = &CServerInfo::writeGoldSourceResponse;
+	m_respxash3d.updateInterval = QUERY_UPDATE_INTERVAL;
+	m_respxash3d.write = &CServerInfo::writeXash3DResponse;
+	m_respPlayers.updateInterval = PLAYERS_UPDATE_INTERVAL;
+	m_respPlayers.write = &CServerInfo::writePlayersList;
+	m_respRules.updateInterval = RULES_UPDATE_INTERVAL;
+	m_respRules.write = &CServerInfo::writeRulesList;
 
 	m_queryLimiter.addExceptIPs(g_ReunionConfig->getExceptIPs());
 	m_lastRatesCheck = g_RehldsFuncs->GetRealTime();
@@ -53,29 +55,32 @@ CServerInfo::CServerInfo()
 	memcpy(g_altgamedir, "czero", sizeof(g_altgamedir));
 }
 
-void CServerInfo::writeSourceResponse(CSizeBuf& szbuf) const
+void CServerInfo::writeSourceResponse(CSizeBuf &szbuf) const
 {
-	szbuf.WriteLong(CONNECTIONLESS_HEADER);				// connectionless header
-	szbuf.WriteByte(S2A_INFO);							// data header
-	szbuf.WriteByte(48);								// protocol
-	szbuf.WriteString(getHostName());					// hostname
-	szbuf.WriteString(getMapName());					// mapname
-	if (m_queryLimiter.isUnderFlood()) {
-		szbuf.WriteChar('\0');							// gamedir
-		szbuf.WriteChar('\0');							// gamename
-	} else {
-		szbuf.WriteString(getGameDir());				// gamedir
-		szbuf.WriteString(getGameDescription());		// gamename
+	szbuf.WriteLong(CONNECTIONLESS_HEADER); // connectionless header
+	szbuf.WriteByte(S2A_INFO);				// data header
+	szbuf.WriteByte(48);					// protocol
+	szbuf.WriteString(getHostName());		// hostname
+	szbuf.WriteString(getMapName());		// mapname
+	if (m_queryLimiter.isUnderFlood())
+	{
+		szbuf.WriteChar('\0'); // gamedir
+		szbuf.WriteChar('\0'); // gamename
 	}
-	szbuf.WriteShort(getAppId());						// appid
-	szbuf.WriteByte((uint8)curPlayers);			// players
-	szbuf.WriteByte((uint8)getVisibleMaxPlayers());		// maxplayers
-	szbuf.WriteByte((uint8)curBots);			// bots
-	szbuf.WriteByte('d');								// server type
-	szbuf.WriteByte(getOS());							// server os
-	szbuf.WriteByte(getIsPasswordSet());				// password
-	szbuf.WriteByte(getSecure());						// secure
-	szbuf.WriteString(getAppVersion());					// app version
+	else
+	{
+		szbuf.WriteString(getGameDir());		 // gamedir
+		szbuf.WriteString(getGameDescription()); // gamename
+	}
+	szbuf.WriteShort(getAppId());					// appid
+	szbuf.WriteByte((uint8)getPlayersCount());		// players
+	szbuf.WriteByte((uint8)getVisibleMaxPlayers()); // maxplayers
+	szbuf.WriteByte(0);								// bots
+	szbuf.WriteByte('d');							// server type
+	szbuf.WriteByte(getOS());						// server os
+	szbuf.WriteByte(getIsPasswordSet());			// password
+	szbuf.WriteByte(getSecure());					// secure
+	szbuf.WriteString(getAppVersion());				// app version
 
 	// Extra Data Flag (EDF)
 	uint8_t edf = EDF_FLAG_PORT;
@@ -110,7 +115,29 @@ void CServerInfo::writeSourceResponse(CSizeBuf& szbuf) const
 		szbuf.WriteUint64(getAppId());
 }
 
-void CServerInfo::writeGoldSourceResponse(CSizeBuf& szbuf) const
+void CServerInfo::writeXash3DResponse(CSizeBuf &szbuf) const
+{
+	szbuf.WriteDWord(0xFFFFFFFFU);
+	szbuf.WriteByte(S2A_INFO); // data header (detailed mode)
+	szbuf.WriteByte(49);	   // Protocol
+	szbuf.WriteString(getHostName());
+	szbuf.WriteString(getMapName());
+	szbuf.WriteString(getGameDir());
+	szbuf.WriteString(getGameDescription());
+	szbuf.WriteShort(0);
+	szbuf.WriteByte((uint8)getPlayersCount());
+	szbuf.WriteByte((uint8)getVisibleMaxPlayers());
+	szbuf.WriteByte((uint8)curBots);
+	szbuf.WriteByte('d');
+	szbuf.WriteByte(getOS());
+	szbuf.WriteByte(getIsPasswordSet());
+	szbuf.WriteByte(getSecure());
+	szbuf.WriteString(XASH_VERSION);
+
+	// printf("sending xash3d response");
+}
+
+void CServerInfo::writeGoldSourceResponse(CSizeBuf &szbuf) const
 {
 	szbuf.WriteLong(CONNECTIONLESS_HEADER);			// connectionless header
 	szbuf.WriteByte(S2A_INFO_DETAILED);				// data header (detailed mode)
@@ -119,23 +146,23 @@ void CServerInfo::writeGoldSourceResponse(CSizeBuf& szbuf) const
 	szbuf.WriteString(getMapName());				// mapname
 	szbuf.WriteString(getGameDir());				// gamedir
 	szbuf.WriteString(getGameDescription());		// gamename
-	szbuf.WriteByte((uint8)curPlayers);		// players
-	szbuf.WriteByte((uint8)getVisibleMaxPlayers());	// maxplayers
+	szbuf.WriteByte((uint8)getPlayersCount());		// players
+	szbuf.WriteByte((uint8)getVisibleMaxPlayers()); // maxplayers
 	szbuf.WriteByte(47);							// protocol
 	szbuf.WriteByte('d');							// server type
 	szbuf.WriteByte(getOS());						// server os
 	szbuf.WriteByte(getIsPasswordSet());			// password
 	szbuf.WriteByte(FALSE);							// mod info
 	szbuf.WriteByte(getSecure());					// secure
-	szbuf.WriteByte((uint8)curBots);		// bots
+	szbuf.WriteByte(0);								// bots
 }
 
-void CServerInfo::writePlayersList(CSizeBuf& szbuf) const
+void CServerInfo::writePlayersList(CSizeBuf &szbuf) const
 {
-	szbuf.WriteLong(CONNECTIONLESS_HEADER);					// connectionless header
-	szbuf.WriteByte(S2A_PLAYERS);							// data header
-	byte* pcount = szbuf.GetData() + szbuf.GetCurSize();
-	szbuf.WriteByte(0);										// players count
+	szbuf.WriteLong(CONNECTIONLESS_HEADER); // connectionless header
+	szbuf.WriteByte(S2A_PLAYERS);			// data header
+	byte *pcount = szbuf.GetData() + szbuf.GetCurSize();
+	szbuf.WriteByte(0); // players count
 
 	size_t count = 0;
 
@@ -146,11 +173,15 @@ void CServerInfo::writePlayersList(CSizeBuf& szbuf) const
 		if (!player->getClient()->IsConnected())
 			continue;
 
-		szbuf.WriteByte((uint8)(count));	// index of player chunk starting from 0
+		int fakeclient = (int)(player->getClient()->IsFakeClient() && !(m_pEdicts[i + 1].v.flags & FL_SPECTATOR));
 
-		szbuf.WriteString(player->getClient()->GetName());									// name
-		szbuf.WriteLong(int(m_pEdicts[i + 1].v.frags));										// frags
-		szbuf.WriteFloat(m_realTime - player->getConnectionTime());							// playing time
+		if (fakeclient > 0)
+			continue;
+
+		szbuf.WriteByte((uint8)(count + (int)player->getClient()->IsFakeClient() * 128));						  // index of player chunk starting from 0
+		szbuf.WriteString(player->getClient()->GetName());														  // name
+		szbuf.WriteLong(int(m_pEdicts[i + 1].v.frags));															  // frags
+		szbuf.WriteFloat((m_realTime - player->getConnectionTime()) * (int)!player->getClient()->IsFakeClient()); // playing time
 
 		count++;
 	}
@@ -158,16 +189,16 @@ void CServerInfo::writePlayersList(CSizeBuf& szbuf) const
 	*pcount = byte(count);
 }
 
-void CServerInfo::writeRulesList(CSizeBuf& szbuf) const
+void CServerInfo::writeRulesList(CSizeBuf &szbuf) const
 {
-	szbuf.WriteLong(CONNECTIONLESS_HEADER);									// connectionless header
-	szbuf.WriteByte(S2A_RULES);												// data header
-	uint16* pcount = (uint16 *)(szbuf.GetData() + szbuf.GetCurSize());
-	szbuf.WriteShort(0);													// cvars count
+	szbuf.WriteLong(CONNECTIONLESS_HEADER); // connectionless header
+	szbuf.WriteByte(S2A_RULES);				// data header
+	uint16 *pcount = (uint16 *)(szbuf.GetData() + szbuf.GetCurSize());
+	szbuf.WriteShort(0); // cvars count
 
 	size_t count = 0;
 
-	for (cvar_t* var = g_RehldsFuncs->GetCvarVars(); var; var = var->next)
+	for (cvar_t *var = g_RehldsFuncs->GetCvarVars(); var; var = var->next)
 	{
 		if (var->flags & FCVAR_SERVER)
 		{
@@ -193,9 +224,10 @@ void CServerInfo::writeRulesList(CSizeBuf& szbuf) const
 	*pcount = uint16(count);
 }
 
-void CServerInfo::sendResponse(const netadr_t& adr, response_t& response)
+void CServerInfo::sendResponse(const netadr_t &adr, response_t &response)
 {
-	if (float(m_realTime - response.lastUpdate) > response.updateInterval) {
+	if (float(m_realTime - response.lastUpdate) > response.updateInterval)
+	{
 		response.lastUpdate = m_realTime;
 		response.cache.Clear();
 		(this->*response.write)(response.cache);
@@ -209,18 +241,19 @@ void CServerInfo::sendResponse(const netadr_t& adr, response_t& response)
 	size_t fragCount = (response.cache.GetCurSize() + fragSize - 1) / fragSize;
 	size_t offset = 0;
 
-	for (size_t packetNumber = 0; packetNumber < fragCount; packetNumber++) {
+	for (size_t packetNumber = 0; packetNumber < fragCount; packetNumber++)
+	{
 		if (packetNumber == fragCount - 1)
 			fragSize = response.cache.GetCurSize() - offset;
 
 		uint8_t packetID = (uint8_t)((packetNumber << 4) + fragCount);
 		CSizeBuf sendbuf(buf, sizeof buf);
-		sendbuf.WriteLong(MULTIPACKET_HEADER);			// connectionless header
-		sendbuf.WriteLong(m_multipacketId);				// sequence number
-		sendbuf.WriteByte(packetID);					// fragment number
+		sendbuf.WriteLong(MULTIPACKET_HEADER); // connectionless header
+		sendbuf.WriteLong(m_multipacketId);	   // sequence number
+		sendbuf.WriteByte(packetID);		   // fragment number
 		sendbuf.Write(response.cache.GetData() + offset, fragSize);
 
-		g_RehldsFuncs->NET_SendPacketEX((netsrc_t)(NS_EXTRA + m_game),sendbuf.GetCurSize(), sendbuf.GetData(), adr);
+		g_RehldsFuncs->NET_SendPacketEX((netsrc_t)(NS_EXTRA + m_game), sendbuf.GetCurSize(), sendbuf.GetData(), adr);
 
 		offset += fragSize;
 	}
@@ -228,7 +261,7 @@ void CServerInfo::sendResponse(const netadr_t& adr, response_t& response)
 	m_multipacketId++;
 }
 
-void CServerInfo::sendQueryChallenge(const netadr_t& to)
+void CServerInfo::sendQueryChallenge(const netadr_t &to)
 {
 	uint8 buf[16];
 	CSizeBuf szbuf(buf, sizeof buf);
@@ -237,10 +270,10 @@ void CServerInfo::sendQueryChallenge(const netadr_t& to)
 	szbuf.WriteChar(S2C_CHALLENGE);
 	szbuf.WriteLong(g_RehldsFuncs->SV_GetChallenge(to));
 
-	g_RehldsFuncs->NET_SendPacketEX((netsrc_t)(NS_EXTRA + m_game),szbuf.GetCurSize(), szbuf.GetData(), to);
+	g_RehldsFuncs->NET_SendPacketEX((netsrc_t)(NS_EXTRA + m_game), szbuf.GetCurSize(), szbuf.GetData(), to);
 }
 
-void CServerInfo::sendServerInfo(const netadr_t& to, server_answer_type sat)
+void CServerInfo::sendServerInfo(const netadr_t &to, server_answer_type sat)
 {
 
 	switch (sat)
@@ -257,265 +290,317 @@ void CServerInfo::sendServerInfo(const netadr_t& to, server_answer_type sat)
 
 		sendResponse(to, m_respGoldSrc);
 
-		if (g_ReunionConfig->allowFixBuggedQuery() && m_queryBugfix.isBuggedQuery(to)) {
+		if (g_ReunionConfig->allowFixBuggedQuery() && m_queryBugfix.isBuggedQuery(to))
+		{
 			sendEmptyPlayersList(to);
 		}
-
 
 		sendResponse(to, m_respSource);
 		break;
 
+	case sat_xash3d:
+		sendResponse(to, m_respxash3d);
+		break;
 	default:
 		util_syserror("invalid response type %u\n", sat);
 		break;
 	}
 }
 
-void CServerInfo::sendPlayersList(const netadr_t& to)
+void CServerInfo::sendPlayersList(const netadr_t &to)
 {
 	sendResponse(to, m_respPlayers);
 }
 
-void CServerInfo::sendEmptyPlayersList(const netadr_t& to)
+void CServerInfo::sendEmptyPlayersList(const netadr_t &to)
 {
 	uint8 buf[16];
 	CSizeBuf szbuf(buf, sizeof buf);
 
-	szbuf.WriteLong(CONNECTIONLESS_HEADER);		// connectionless header
-	szbuf.WriteByte(S2A_PLAYERS);				// data header
-	szbuf.WriteByte(0);							// some clients crashing if not 0
+	szbuf.WriteLong(CONNECTIONLESS_HEADER); // connectionless header
+	szbuf.WriteByte(S2A_PLAYERS);			// data header
+	szbuf.WriteByte(0);						// some clients crashing if not 0
 
-	g_RehldsFuncs->NET_SendPacketEX((netsrc_t)(NS_EXTRA + m_game),szbuf.GetCurSize(), szbuf.GetData(), to);
+	g_RehldsFuncs->NET_SendPacketEX((netsrc_t)(NS_EXTRA + m_game), szbuf.GetCurSize(), szbuf.GetData(), to);
 }
 
-void CServerInfo::sendRulesList(const netadr_t& to)
+void CServerInfo::sendRulesList(const netadr_t &to)
 {
 	sendResponse(to, m_respRules);
 }
 
 #define equal(x, s) !memcmp(x, s, sizeof s - 1)
 
-bool CServerInfo::handleQueryGlobal(IRehldsHook_PreprocessPacketEX* chain, CSizeBuf& szbuf, const netadr_t& from, unsigned int game)
+bool CServerInfo::handleQueryGlobal(IRehldsHook_PreprocessPacketEX *chain, CSizeBuf &szbuf, const netadr_t &from, unsigned int game)
 {
 	switch (szbuf.ReadChar())
 	{
-		/* Source style requests. All requests starting from registered chars are handled in steam client library. */
-		case A2S_INFO:
-		{
-			// Ignore invalid requests
-			if (szbuf.GetMaxSize() < A2S_INFO_LEN || szbuf.GetData()[5] != 'S') // "Source Engine Query"
-				return false;
-
-			g_RehldsFuncs->NET_SendPacketEX((netsrc_t)(NS_EXTRA + m_game),m_respSource.cache.GetCurSize(), m_respSource.cache.GetData(), from);
+	/* Source style requests. All requests starting from registered chars are handled in steam client library. */
+	case A2S_INFO:
+	{
+		// Ignore invalid requests
+		if (szbuf.GetMaxSize() < A2S_INFO_LEN || szbuf.GetData()[5] != 'S') // "Source Engine Query"
 			return false;
+
+		g_RehldsFuncs->NET_SendPacketEX((netsrc_t)(NS_EXTRA + m_game), m_respSource.cache.GetCurSize(), m_respSource.cache.GetData(), from);
+		return false;
+	}
+
+	case A2S_PLAYER:
+	{
+		if (szbuf.GetCurSize() < A2S_PLAYER_MINLEN) // actual len is 10, but 9 also valid
+			return false;
+
+		int challenge = szbuf.ReadLong();
+
+		if (challenge <= 0 || !g_RehldsFuncs->CheckChallenge(from, challenge))
+		{
+			sendQueryChallenge(from);
+		}
+		else
+		{
+			sendPlayersList(from);
 		}
 
-		case A2S_PLAYER:
+		return false;
+	}
+
+	/* GoldSource style requests */
+	case 'c': // connect/challenge
+	{
+		if (equal(szbuf.GetData() + 4, CONNECT) && szbuf.GetCurSize() > 64)
 		{
-			if (szbuf.GetCurSize() < A2S_PLAYER_MINLEN) // actual len is 10, but 9 also valid
-				return false;
-
-			int challenge = szbuf.ReadLong();
-
-			if (challenge <= 0 || !g_RehldsFuncs->CheckChallenge(from, challenge)) {
-				sendQueryChallenge(from);
-			}
-			else {
-				sendPlayersList(from);
-			}
-
-			return false;
+			break;
 		}
-
-		/* GoldSource style requests */
-		case 'c': // connect/challenge
+		if (equal(szbuf.GetData() + 4, CHALLENGE))
 		{
-			if (equal(szbuf.GetData() + 4, CONNECT) && szbuf.GetCurSize() > 64) {
-				break;
-			}
-			if (equal(szbuf.GetData() + 4, CHALLENGE)) {
-				break;
-			}
-			return false;
+			break;
 		}
+		return false;
+	}
 
-		case 'g': // getchallenge
+	case 'g': // getchallenge
+	{
+		if (equal(szbuf.GetData() + 4, GETCHALLENGE))
 		{
-			if (equal(szbuf.GetData() + 4, GETCHALLENGE)) {
-				break;
-			}
-			return false;
+			break;
 		}
+		return false;
+	}
 
-		default:
-			return false;
+	default:
+		return false;
 	}
 
 	return chain->callNext(szbuf.GetData(), szbuf.GetCurSize(), from, game);
 }
 
-bool CServerInfo::handleQuery(IRehldsHook_PreprocessPacketEX* chain, uint8* data, unsigned int len, const netadr_t& from, unsigned int game)
+bool CServerInfo::handleQuery(IRehldsHook_PreprocessPacketEX *chain, uint8 *data, unsigned int len, const netadr_t &from, unsigned int game)
 {
 	m_queryLimiter.incomingPacket(len + PACKET_HEADER_SIZE);
 
-	if (len < 5) {
+	if (len < 5)
+	{
 		return false;
 	}
+
+	bool xash3dResp = false;
 
 	CSizeBuf szbuf(data, len, len);
 
 	// Not connectionless
-	if (szbuf.ReadLong() != -1) {
+	if (szbuf.ReadLong() != -1)
+	{
 		return chain->callNext(data, len, from, game);
 	}
 
-	if (g_ReunionConfig->enableQueryLimiter()) {
+	/*if (data[4] == 'i'&& data[5] == 'n' && data[6] == 'f'&& data[7] == 'o' && data[8] == ' ' && data[9] == '4' && data[10] == '9')
+	{
+		szbuf.Clear();
+		szbuf.WriteByte('T');
+		xash3dResp = true;
+	}*/
+
+	// printf("\n%s",data);
+
+	if (g_ReunionConfig->enableQueryLimiter())
+	{
 		m_queryLimiter.incomingQuery();
-		if (m_queryLimiter.getUseGlobalRateLimit()) {
+		if (m_queryLimiter.getUseGlobalRateLimit())
+		{
 			return m_queryLimiter.allowGlobalQuery() ? handleQueryGlobal(chain, szbuf, from, game) : false;
 		}
 	}
 
-	//LCPrintf(true, "Connectionless packet %i: %.*s\n", len, max(0, int(len) - 4), szbuf.GetData() + 4);
+	// LCPrintf(true, "Connectionless packet %i: %.*s\n", len, max(0, int(len) - 4), szbuf.GetData() + 4);
+	// printf("%s with len of %i and comparison of %i", szbuf.ReadString(), len, strcmp(szbuf.ReadString(), "info 49"));
+	/*printf("\nlen request %i", szbuf.GetMaxSize());
+	printf("\ndata index 5 %c", data[5]);
+	printf("\nisxash3d request %s", xash3dResp ? "true" : "false");*/
 
 	switch (szbuf.ReadChar())
 	{
-		/* Source style requests. All requests starting from registered chars are handled in steam client library. */
-		case A2S_INFO:
+	/* Source style requests. All requests starting from registered chars are handled in steam client library. */
+	case A2S_INFO:
+	{
+		// printf("\n Starting checks");
+
+		// Ignore invalid requests
+		if (!xash3dResp && (szbuf.GetMaxSize() < A2S_INFO_LEN || data[5] != 'S')) // "Source Engine Query"
+			return false;
+
+		/*if (xash3dResp && szbuf.GetMaxSize() < 11 && m_appId != 10) // Xash3D only limited to CS 1.6
+			return false;*/
+
+		// printf("\n Checks validated");
+
+		if (m_queryLimiter.allowQuery(from))
 		{
-			// Ignore invalid requests
-			if (szbuf.GetMaxSize() < A2S_INFO_LEN || data[5] != 'S') // "Source Engine Query"
-				return false;
+			server_answer_type sat = g_ReunionConfig->getServerAnswerType();
 
-			if (m_queryLimiter.allowQuery(from)) {
-				server_answer_type sat = g_ReunionConfig->getServerAnswerType();
-
-
-				if (sat == sat_hybrid && m_queryLimiter.isUnderFlood()) {
-					sat = sat_source;
-				}
-
+			/*if (xash3dResp)
+			{
+				sat = sat_xash3d;
 				sendServerInfo(from, sat);
+				return false;
+			}*/
+
+			if (sat == sat_hybrid && m_queryLimiter.isUnderFlood())
+			{
+				sat = sat_source;
 			}
 
-			return false;
+			sendServerInfo(from, sat);
 		}
 
-		case A2S_RULES:
-		{
-			if (len != A2S_RULES_MINLEN)
-				return false;
-
-			int challenge = szbuf.ReadLong();
-
-			if (challenge <= 0 || !g_RehldsFuncs->CheckChallenge(from, challenge)) { // HLSW often uses outdated challenge
-				sendQueryChallenge(from);
-			}
-			else {
-				sendRulesList(from);
-			}
-
+		return false;
+	}
+	case A2S_RULES:
+	{
+		if (len != A2S_RULES_MINLEN)
 			return false;
+
+		int challenge = szbuf.ReadLong();
+
+		if (challenge <= 0 || !g_RehldsFuncs->CheckChallenge(from, challenge))
+		{ // HLSW often uses outdated challenge
+			sendQueryChallenge(from);
+		}
+		else
+		{
+			sendRulesList(from);
 		}
 
-		case A2S_PLAYER:
+		return false;
+	}
+
+	case A2S_PLAYER:
+	{
+		if (len < A2S_PLAYER_MINLEN) // actual len is 10, but 9 also valid
+			return false;
+
+		int challenge = szbuf.ReadLong();
+
+		if (challenge <= 0 || !g_RehldsFuncs->CheckChallenge(from, challenge))
 		{
-			if (len < A2S_PLAYER_MINLEN) // actual len is 10, but 9 also valid
-				return false;
+			sendQueryChallenge(from);
+		}
+		else
+		{
+			sendPlayersList(from);
+		}
 
-			int challenge = szbuf.ReadLong();
+		return false;
+	}
 
-			if (challenge <= 0 || !g_RehldsFuncs->CheckChallenge(from, challenge)) {
-				sendQueryChallenge(from);
-			}
-			else {
+	// ignore incoming server query responces
+	case S2A_INFO:
+	case S2A_PLAYERS:
+	case S2A_INFO_OLD:
+	case S2A_INFO_DETAILED:
+		return false;
+
+	/* GoldSource style requests */
+
+	// old 'add to favorites' query
+	case 'd': // details
+	{
+		if (!equal(data + 4, DETAILS))
+			break;
+
+		server_answer_type sat = g_ReunionConfig->getServerAnswerType();
+
+		if (sat != sat_source && m_queryLimiter.allowQuery(from) && !m_queryLimiter.isUnderFlood())
+		{
+
+			sendServerInfo(from, sat_goldsource);
+		}
+
+		return false;
+	}
+
+	case 'p':
+	{
+		if (!equal(data + 4, PLAYERS))
+			break;
+
+		server_answer_type sat = g_ReunionConfig->getServerAnswerType();
+
+		if (sat != sat_source)
+		{
+			if (m_queryLimiter.allowQuery(from) && !m_queryLimiter.isUnderFlood())
+			{
 				sendPlayersList(from);
 			}
+			else
+			{
+				sendEmptyPlayersList(from);
+			}
+		}
+		break;
+	}
 
+	case 'c': // connect/challenge
+	{
+		if (equal(data + 4, CONNECT) && len < 64)
+		{
 			return false;
 		}
-
-		// ignore incoming server query responces
-		case S2A_INFO:
-		case S2A_PLAYERS:
-		case S2A_INFO_OLD:
-		case S2A_INFO_DETAILED:
-			return false;
-
-		/* GoldSource style requests */
-
-		// old 'add to favorites' query
-		case 'd': // details
+		if (equal(data + 4, CHALLENGE) && !m_queryLimiter.allowQuery(from, true))
 		{
-			if (!equal(data + 4, DETAILS))
-				break;
-
-			server_answer_type sat = g_ReunionConfig->getServerAnswerType();
-
-			if (sat != sat_source && m_queryLimiter.allowQuery(from) && !m_queryLimiter.isUnderFlood()) {
-
-				sendServerInfo(from, sat_goldsource);
-			}
-
 			return false;
 		}
+		break;
+	}
 
-		case 'p':
+	case 'g': // getchallenge
+	{
+		if (equal(data + 4, GETCHALLENGE) && !m_queryLimiter.allowQuery(from, true))
 		{
-			if (!equal(data + 4, PLAYERS))
-				break;
-
-			server_answer_type sat = g_ReunionConfig->getServerAnswerType();
-
-			if (sat != sat_source) {
-				if (m_queryLimiter.allowQuery(from) && !m_queryLimiter.isUnderFlood()) {
-					sendPlayersList(from);
-				}
-				else {
-					sendEmptyPlayersList(from);
-				}
-			}
-			break;
+			return false;
 		}
+		break;
+	}
 
-		case 'c': // connect/challenge
-		{
-			if (equal(data + 4, CONNECT) && len < 64) {
-				return false;
-			}
-			if (equal(data + 4, CHALLENGE) && !m_queryLimiter.allowQuery(from, true)) {
-				return false;
-			}
-			break;
-		}
-
-		case 'g': // getchallenge
-		{
-			if (equal(data + 4, GETCHALLENGE) && !m_queryLimiter.allowQuery(from, true)) {
-				return false;
-			}
-			break;
-		}
-
-		default:
-			break;
+	default:
+		break;
 	}
 
 	// query not handled
 	return chain->callNext(data, len, from, game);
 }
 
-bool CServerInfo::isAddressBanned(const netadr_t& from) const
+bool CServerInfo::isAddressBanned(const netadr_t &from) const
 {
 	return m_queryBanList.isBanned(*(uint32 *)from.ip);
 }
 
-void CServerInfo::banAddress(const char* addr, uint32_t time)
+void CServerInfo::banAddress(const char *addr, uint32_t time)
 {
 	m_queryBanList.addBan(inet_addr(addr), time);
 }
 
-void CServerInfo::unbanAddress(const char* addr)
+void CServerInfo::unbanAddress(const char *addr)
 {
 	m_queryBanList.removeBan(inet_addr(addr));
 }
@@ -535,19 +620,20 @@ void CServerInfo::startFrame()
 	double realtime = g_RehldsFuncs->GetRealTime();
 	float delta = float(realtime - m_lastRatesCheck);
 
-	if (delta > QUERY_CHECK_INTERVAL) {
+	if (delta > QUERY_CHECK_INTERVAL)
+	{
 		m_lastRatesCheck = realtime;
 		m_queryBanList.removeExpired(realtime);
 		m_queryLimiter.checkRates(realtime, delta, m_queryBanList);
 	}
 }
 
-edict_t* CServerInfo::getEdict(size_t index) const
+edict_t *CServerInfo::getEdict(size_t index) const
 {
 	return m_pEdicts + index;
 }
 
-void CServerInfo::serverActivate(edict_t* edicts, int maxclients, bool isAlt)
+void CServerInfo::serverActivate(edict_t *edicts, int maxclients, bool isAlt)
 {
 	m_pEdicts = edicts;
 	m_maxPlayers = maxclients;
@@ -566,9 +652,11 @@ void CServerInfo::serverActivate(edict_t* edicts, int maxclients, bool isAlt)
 	parseAppVersion(m_appVersion, sizeof m_appVersion - 1);
 	g_port = atoi(g_engfuncs.pfnCVarGetString("hostport"));
 
-	if (!g_port) {
+	if (!g_port)
+	{
 		g_port = atoi(g_engfuncs.pfnCVarGetString("port"));
-		if (!g_port) {
+		if (!g_port)
+		{
 			g_port = PORT_SERVER;
 		}
 	}
@@ -576,27 +664,27 @@ void CServerInfo::serverActivate(edict_t* edicts, int maxclients, bool isAlt)
 	changeGameID(isAlt);
 }
 
-const char* CServerInfo::getHostName() const
+const char *CServerInfo::getHostName() const
 {
 	return m_pcv_hostname->string;
 }
 
-const char* CServerInfo::getTags() const
+const char *CServerInfo::getTags() const
 {
 	return m_pcv_sv_tags ? m_pcv_sv_tags->string : nullptr;
 }
 
-const char* CServerInfo::getMapName()
+const char *CServerInfo::getMapName()
 {
 	return STRING(gpGlobals->mapname);
 }
 
-const char* CServerInfo::getGameDir() const
+const char *CServerInfo::getGameDir() const
 {
 	return m_gameDir;
 }
 
-const char* CServerInfo::getGameDescription() const
+const char *CServerInfo::getGameDescription() const
 {
 	if (m_pEntityInterface->pfnGetGameDescription)
 	{
@@ -636,7 +724,7 @@ uint8 CServerInfo::getSecure()
 	return g_RehldsFuncs->GSBSecure();
 }
 
-const char* CServerInfo::getServerAddress() const
+const char *CServerInfo::getServerAddress() const
 {
 	return m_pcv_net_address->string;
 }
@@ -656,7 +744,7 @@ int CServerInfo::getAppId() const
 	return m_appId;
 }
 
-const char* CServerInfo::getAppVersion() const
+const char *CServerInfo::getAppVersion() const
 {
 	return m_appVersion;
 }
@@ -667,8 +755,9 @@ int CServerInfo::parseAppId()
 	char filename[MAX_PATH];
 	snprintf(filename, sizeof filename, "./%s/steam_appid.txt", m_gameDir);
 
-	FILE* fp = fopen(filename, "rt");
-	if (fp) {
+	FILE *fp = fopen(filename, "rt");
+	if (fp)
+	{
 		char line[256];
 
 		if (fgets(line, sizeof line, fp))
@@ -677,25 +766,29 @@ int CServerInfo::parseAppId()
 		fclose(fp);
 	}
 
-	if (!appId) {
+	if (!appId)
+	{
 		appId = HLDS_APPID;
 	}
 
 	return appId;
 }
 
-void CServerInfo::parseAppVersion(char* buf, size_t maxlen)
+void CServerInfo::parseAppVersion(char *buf, size_t maxlen)
 {
 	char filename[MAX_PATH];
 	snprintf(filename, sizeof filename, "./%s/steam.inf", m_gameDir);
 
-	FILE* fp = fopen(filename, "rt");
-	if (fp) {
+	FILE *fp = fopen(filename, "rt");
+	if (fp)
+	{
 		char line[256];
 
-		while (fgets(line, sizeof line, fp)) {
-			char* value = strchr(line, '=');
-			if (!value) {
+		while (fgets(line, sizeof line, fp))
+		{
+			char *value = strchr(line, '=');
+			if (!value)
+			{
 				continue;
 			}
 
@@ -703,7 +796,8 @@ void CServerInfo::parseAppVersion(char* buf, size_t maxlen)
 			trimbuf(line);
 			trimbuf(value);
 
-			if (!strcmp(line, "PatchVersion=")) {
+			if (!strcmp(line, "PatchVersion="))
+			{
 				snprintf(buf, maxlen, "%s/Stdio", value);
 				break;
 			}
@@ -711,20 +805,23 @@ void CServerInfo::parseAppVersion(char* buf, size_t maxlen)
 		fclose(fp);
 	}
 
-	if (!buf[0]) {
+	if (!buf[0])
+	{
 		strncpy(buf, HLDS_APPVERSION, maxlen);
 	}
 }
 
 void CServerInfo::changeGameID(bool isAlt)
 {
-	if (isAlt){
+	if (isAlt)
+	{
 		memcpy(m_gameDir, g_altgamedir, sizeof(m_gameDir));
 		m_appId = g_alt_appid;
 		m_port = g_port + 1;
 		m_game = 1;
 	}
-	else{
+	else
+	{
 		memcpy(m_gameDir, g_gamedir, sizeof(m_gameDir));
 		m_appId = g_appid;
 		m_port = g_port;
@@ -732,10 +829,26 @@ void CServerInfo::changeGameID(bool isAlt)
 	}
 }
 
-
 size_t CServerInfo::getPlayersCount()
 {
-	return Reunion_GetConnectedPlayersCount();
+	size_t count = 0;
+
+	for (int i = 0; i < g_ServerInfo->m_maxPlayers; i++)
+	{
+		const CReunionPlayer *player = g_Players[i];
+
+		if (!(player->getClient()->IsConnected()))
+			continue;
+
+		int fakeclient = (int)(player->getClient()->IsFakeClient() && !(g_ServerInfo->m_pEdicts[i + 1].v.flags & FL_SPECTATOR));
+
+		if (fakeclient)
+			continue;
+
+		count++;
+	}
+
+	return count;
 }
 
 size_t CServerInfo::getPlayingBots() const
@@ -744,31 +857,28 @@ size_t CServerInfo::getPlayingBots() const
 
 	for (int i = 0; i < g_ServerInfo->m_maxPlayers; i++)
 	{
-		const CReunionPlayer* player = g_Players[i];
+		const CReunionPlayer *player = g_Players[i];
 
 		if (!(player->getClient()->IsConnected()))
 			continue;
 
-		if (!(g_ServerInfo->m_pEdicts[i+1].v.flags & (FL_CLIENT & ~FL_FAKECLIENT)))
+		if (!(g_ServerInfo->m_pEdicts[i + 1].v.flags & (FL_CLIENT & ~FL_FAKECLIENT)))
 			continue;
 
-		if (g_ServerInfo->m_pEdicts[i+1].v.flags & (FL_SPECTATOR | FL_DORMANT))
+		if (g_ServerInfo->m_pEdicts[i + 1].v.flags & (FL_SPECTATOR | FL_DORMANT))
 			continue;
 
 		if (!(player->getClient()->IsFakeClient()))
 			continue;
 
-		count++;	
+		count++;
 	}
 
 	return count;
 }
 
-bool Reunion_PreprocessPacketEX(IRehldsHook_PreprocessPacketEX* chain, uint8* data, unsigned int len, const netadr_t& from, unsigned int game)
+bool Reunion_PreprocessPacketEX(IRehldsHook_PreprocessPacketEX *chain, uint8 *data, unsigned int len, const netadr_t &from, unsigned int game)
 {
-	curPlayers = g_ServerInfo->getPlayersCount();
-	curBots = g_ServerInfo->getPlayingBots();
-
 	if (!game)
 	{
 		if (!g_ServerInfo->isAddressBanned(from))
@@ -782,7 +892,6 @@ bool Reunion_PreprocessPacketEX(IRehldsHook_PreprocessPacketEX* chain, uint8* da
 
 	return false;
 }
-
 
 bool Reunion_Init_ServerInfo()
 {

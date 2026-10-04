@@ -77,7 +77,8 @@ enum auth_version {
 enum server_answer_type {
 	sat_source = 0,
 	sat_goldsource = 1,
-	sat_hybrid = 2
+	sat_hybrid = 2,
+	sat_xash3d = 3
 };
 
 struct client_id_gen_opts_t {

@@ -7,6 +7,7 @@
 #define QUERY_UPDATE_INTERVAL		0.5f	// A2S_INFO cache time
 #define PLAYERS_UPDATE_INTERVAL		0.5f	// A2S_PLAYERS cache time
 #define RULES_UPDATE_INTERVAL		2.0f	// A2S_RULES cache time
+#define XASH_VERSION				"0.21"
 
 class CServerInfo;
 typedef void (CServerInfo::*write_response_t)(CSizeBuf& szbuf) const;
@@ -47,6 +48,7 @@ public:
 	// QUERY PROCEDURES
 	void writeSourceResponse(CSizeBuf& szbuf) const;
 	void writeGoldSourceResponse(CSizeBuf& szbuf) const;
+	void writeXash3DResponse(CSizeBuf& szbuf) const;
 	void writePlayersList(CSizeBuf& szbuf) const;
 	void writeRulesList(CSizeBuf& szbuf) const;
 
@@ -102,6 +104,7 @@ private:
 
 	query_response_t<STEAM_MAX_PACKET_SIZE>		m_respSource;
 	query_response_t<STEAM_MAX_PACKET_SIZE>		m_respGoldSrc;
+	query_response_t<STEAM_MAX_PACKET_SIZE>		m_respxash3d;
 	query_response_t<STEAM_MAX_PACKET_SIZE>		m_respPlayers;
 	query_response_t<STEAM_MAX_PACKET_SIZE * 2>	m_respRules;
 
